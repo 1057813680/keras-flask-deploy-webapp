@@ -1,18 +1,13 @@
-from __future__ import division, print_function
 # coding=utf-8
-import sys
 import os
-import glob
-import re
-import numpy as np
 
+import cv2
 # Keras
-from keras.applications.imagenet_utils import preprocess_input, decode_predictions
 from keras.models import load_model
 from keras.preprocessing import image
 
 # Flask utils
-from flask import Flask, redirect, url_for, request, render_template
+from flask import Flask, request, render_template
 from werkzeug.utils import secure_filename
 from gevent.pywsgi import WSGIServer
 
@@ -20,31 +15,25 @@ from gevent.pywsgi import WSGIServer
 app = Flask(__name__)
 
 # Model saved with Keras model.save()
-MODEL_PATH = 'models/your_model.h5'
+MODEL_PATH = '../easy12306/12306.image.model.h5'
 
 # Load your trained model
-# model = load_model(MODEL_PATH)
+model = load_model(MODEL_PATH)
+texts = open('texts.txt').readlines()
 # model._make_predict_function()          # Necessary
 # print('Model loaded. Start serving...')
 
-# You can also use pretrained model from Keras
-# Check https://keras.io/applications/
-from keras.applications.resnet50 import ResNet50
-model = ResNet50(weights='imagenet')
 print('Model loaded. Check http://127.0.0.1:5000/')
 
 
 def model_predict(img_path, model):
-    img = image.load_img(img_path, target_size=(224, 224))
+    img = cv2.imread(img_path)
+    img = cv2.resize(img, (67, 67))
 
     # Preprocessing the image
     x = image.img_to_array(img)
-    # x = np.true_divide(x, 255)
-    x = np.expand_dims(x, axis=0)
-
-    # Be careful how your trained model deals with the input
-    # otherwise, it won't make correct prediction!
-    x = preprocess_input(x, mode='caffe')
+    x = x / 255.0
+    x.shape = (1,) + x.shape
 
     preds = model.predict(x)
     return preds
@@ -72,9 +61,8 @@ def upload():
         preds = model_predict(file_path, model)
 
         # Process your result for human
-        # pred_class = preds.argmax(axis=-1)            # Simple argmax
-        pred_class = decode_predictions(preds, top=1)   # ImageNet Decode
-        result = str(pred_class[0][0][1])               # Convert to string
+        pred_class = preds.argmax(axis=-1)  # Simple argmax
+        result = texts[pred_class[0]]       # Convert to string
         return result
     return None
 
