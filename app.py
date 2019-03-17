@@ -1,18 +1,14 @@
-from __future__ import division, print_function
 # coding=utf-8
-import sys
 import os
-import glob
-import re
-import numpy as np
 
+import cv2
+import scipy.fftpack
+import numpy as np
 # Keras
-from keras.applications.imagenet_utils import preprocess_input, decode_predictions
 from keras.models import load_model
-from keras.preprocessing import image
 
 # Flask utils
-from flask import Flask, redirect, url_for, request, render_template
+from flask import Flask, request, render_template
 from werkzeug.utils import secure_filename
 from gevent.pywsgi import WSGIServer
 
@@ -20,34 +16,80 @@ from gevent.pywsgi import WSGIServer
 app = Flask(__name__)
 
 # Model saved with Keras model.save()
-MODEL_PATH = 'models/your_model.h5'
+MODEL_PATH = '../easy12306/model.h5'
 
 # Load your trained model
-# model = load_model(MODEL_PATH)
+model = load_model(MODEL_PATH)
+texts = open('texts.txt').readlines()
 # model._make_predict_function()          # Necessary
 # print('Model loaded. Start serving...')
 
-# You can also use pretrained model from Keras
-# Check https://keras.io/applications/
-from keras.applications.resnet50 import ResNet50
-model = ResNet50(weights='imagenet')
-print('Model loaded. Check http://127.0.0.1:5000/')
+# 加载图片分类器
+data = np.load('images.npz')
+images, labels = data['images'], data['labels']
+labels = labels.argmax(axis=1)
+
+print('Model loaded. Check http://127.0.0.1:12306/')
+
+
+def get_text(img):
+    # 得到图像中的文本部分
+    return img[3:22, 120:177]
+
+
+def phash(im):
+    im = cv2.resize(im, (32, 32), interpolation=cv2.INTER_CUBIC)
+    im = scipy.fftpack.dct(scipy.fftpack.dct(im, axis=0), axis=1)
+    im = im[:8, :8]
+    med = np.median(im)
+    im = im > med
+    im = np.packbits(im)
+    return im
+
+
+def _get_imgs(img):
+    interval = 5
+    length = 67
+    for x in range(40, img.shape[0] - length, interval + length):
+        for y in range(interval, img.shape[1] - length, interval + length):
+            yield img[x:x + length, y:y + length]
+
+
+def get_imgs(img):
+    imgs = []
+    for img in _get_imgs(img):
+        imgs.append(phash(img))
+    return imgs
 
 
 def model_predict(img_path, model):
-    img = image.load_img(img_path, target_size=(224, 224))
+    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+    text = get_text(img)
+    imgs = get_imgs(img)
 
     # Preprocessing the image
-    x = image.img_to_array(img)
-    # x = np.true_divide(x, 255)
-    x = np.expand_dims(x, axis=0)
+    text = text / 255.0
+    text.shape = (1,) + text.shape + (1,)
 
-    # Be careful how your trained model deals with the input
-    # otherwise, it won't make correct prediction!
-    x = preprocess_input(x, mode='caffe')
+    preds = model.predict(text)
 
-    preds = model.predict(x)
-    return preds
+    _labels = []
+    for img in imgs:
+        img.dtype = np.uint64
+        img = img[0]
+
+        data = images ^ img
+        n = data.shape[0]
+        data.dtype = np.uint8
+        data = np.unpackbits(data)
+        data.shape = (n, -1)
+        data = data.sum(axis=1)
+        idx = data.argmin()
+
+        label = labels[idx]
+        _labels.append(label)
+
+    return preds, _labels
 
 
 @app.route('/', methods=['GET'])
@@ -69,12 +111,13 @@ def upload():
         f.save(file_path)
 
         # Make prediction
-        preds = model_predict(file_path, model)
+        preds, imgs = model_predict(file_path, model)
 
         # Process your result for human
-        # pred_class = preds.argmax(axis=-1)            # Simple argmax
-        pred_class = decode_predictions(preds, top=1)   # ImageNet Decode
-        result = str(pred_class[0][0][1])               # Convert to string
+        pred_class = preds.argmax(axis=-1)  # Simple argmax
+        result = texts[pred_class[0]]       # Convert to string
+        result = f'text: {result}, images: '
+        result = result + ', '.join(texts[img] for img in imgs)
         return result
     return None
 
@@ -83,5 +126,5 @@ if __name__ == '__main__':
     # app.run(port=5002, debug=True)
 
     # Serve the app with gevent
-    http_server = WSGIServer(('', 5000), app)
+    http_server = WSGIServer(('', 12306), app)
     http_server.serve_forever()
