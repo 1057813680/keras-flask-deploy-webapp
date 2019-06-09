@@ -1,6 +1,6 @@
 {% extends "base.html" %} {% block content %}
 
-<h2>Image Classifier</h2>
+<h2>Image segmentation</h2>
 
 <div>
     <form id="upload-file" method="post" enctype="multipart/form-data">
@@ -22,9 +22,8 @@
 
     <div class="loader" style="display:none;"></div>
 
-    <h3 id="result">
-        <span> </span>
-    </h3>
+    <div id="result", class="result">
+    </div>
 
 </div>
 

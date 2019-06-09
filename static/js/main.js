@@ -45,7 +45,7 @@ $(document).ready(function () {
                 // Get and display the result
                 $('.loader').hide();
                 $('#result').fadeIn(600);
-                $('#result').text(' Result:  ' + data);
+                $('#result').css('background-image', 'url("data:image/jpeg;base64,' + data + '")');
                 console.log('Success!');
             },
         });
